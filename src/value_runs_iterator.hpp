@@ -63,7 +63,7 @@ constexpr int32_t ValueRunsIterator<T>::get_limit() const {
 
 template <typename T>
 constexpr void ValueRunsIterator<T>::advance_to(int32_t index) {
-	while (m_runs->get_run_limit(m_runIndex) <= index) {
+	while (m_runIndex < m_runs->get_run_count() && m_runs->get_run_limit(m_runIndex) <= index) {
 		++m_runIndex;
 	}
 }
@@ -82,7 +82,7 @@ constexpr int32_t MaybeDefaultRunsIterator<T>::get_limit() const {
 
 template <typename T>
 constexpr void MaybeDefaultRunsIterator<T>::advance_to(int32_t index) {
-	while (m_runs && m_runs->get_run_limit(m_runIndex) <= index) {
+	while (m_runs && m_runIndex < m_runs->get_run_count() && m_runs->get_run_limit(m_runIndex) <= index) {
 		++m_runIndex;
 	}
 }
