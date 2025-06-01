@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common.hpp"
 #include "cursor_position.hpp"
 #include "text_alignment.hpp"
 #include "font.hpp"
@@ -18,22 +17,6 @@ class BreakIterator;
 U_NAMESPACE_END
 
 namespace Text {
-
-enum class LayoutInfoFlags : uint8_t {
-	NONE = 0,
-	// Whether the text direction default should be RTL when no strongly directional characters are detected.
-	// Leave unset to default to LTR.
-	RIGHT_TO_LEFT = 1, 
-	// Whether the configured text direction should override the paragraph base direction, regardless of the
-	// presence of strongly-directional scripts.
-	OVERRIDE_DIRECTIONALITY = 2, 
-	// Whether the text is composed vertically. Leave unset for horizontal text.
-	VERTICAL = 4, 
-	// Whether the tab width parameter is in pixels. Leave unset for tab width in terms of space-widths.
-	TAB_WIDTH_PIXELS = 8, 
-};
-
-RICHTEXT_DEFINE_ENUM_BITFLAG_OPERATORS(LayoutInfoFlags)
 
 struct VisualCursorInfo {
 	float x;
@@ -68,6 +51,10 @@ class LayoutInfo {
 		void append_empty_line(const SingleScriptFont& font, uint32_t charIndex, float height, float ascent);
 		void set_run_char_end_offset(size_t runIndex, uint8_t charEndOffset);
 		void set_text_start_y(float);
+
+		void pop_run();
+		// Pop runs until run count == runCount
+		void pop_runs_until(size_t runCount);
 
 		/**
 		 * Calculates the pixel position, height, and line number of the text cursor given the provided

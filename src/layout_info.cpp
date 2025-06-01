@@ -1,6 +1,7 @@
 #include "layout_info.hpp"
 
 #include "binary_search.hpp"
+#include "common.hpp"
 
 #include <unicode/brkiter.h>
 
@@ -91,6 +92,26 @@ void LayoutInfo::set_run_char_end_offset(size_t runIndex, uint8_t charEndOffset)
 
 void LayoutInfo::set_text_start_y(float textStartY) {
 	m_textStartY = textStartY;
+}
+
+void LayoutInfo::pop_run() {
+	auto glyphIndex = get_first_glyph_index(m_visualRuns.size() - 1);
+	auto posIndex = get_first_position_index(m_visualRuns.size() - 1);
+
+	m_glyphs.resize(glyphIndex);
+	m_charIndices.resize(glyphIndex);
+	m_glyphPositions.resize(posIndex);
+	m_visualRuns.pop_back();
+}
+
+void LayoutInfo::pop_runs_until(size_t runCount) {
+	auto glyphIndex = get_first_glyph_index(runCount);
+	auto posIndex = get_first_position_index(runCount);
+
+	m_glyphs.resize(glyphIndex);
+	m_charIndices.resize(glyphIndex);
+	m_glyphPositions.resize(posIndex);
+	m_visualRuns.resize(runCount);
 }
 
 VisualCursorInfo LayoutInfo::calc_cursor_pixel_pos(float textWidth, XAlignment textXAlignment,

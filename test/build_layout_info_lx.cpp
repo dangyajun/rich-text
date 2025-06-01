@@ -1,5 +1,6 @@
 #include "other_layout_builders.hpp"
 #include "layout_info.hpp"
+#include "layout_builder.hpp"
 
 #include "font_registry.hpp"
 #include "value_runs.hpp"

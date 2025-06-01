@@ -2,6 +2,8 @@ target_sources(RichText PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui_object.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ui_container.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/collidable_text_box.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/draggable_frame.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/frame.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/text_box.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/tool_bar.cpp"

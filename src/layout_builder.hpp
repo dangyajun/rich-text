@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.hpp"
 #include "font.hpp"
 #include "functor_ref_wrapper.hpp"
 #include "text_alignment.hpp"
@@ -21,12 +22,33 @@ struct _SBParagraph;
 namespace Text {
 
 class LayoutInfo;
-enum class LayoutInfoFlags : uint8_t;
 template <typename> class ValueRuns;
 template <typename> class ValueRunsIterator;
 template <typename> class MaybeDefaultRunsIterator;
 
+enum class LayoutInfoFlags : uint8_t {
+	NONE = 0,
+	// Whether the text direction default should be RTL when no strongly directional characters are detected.
+	// Leave unset to default to LTR.
+	RIGHT_TO_LEFT = 1, 
+	// Whether the configured text direction should override the paragraph base direction, regardless of the
+	// presence of strongly-directional scripts.
+	OVERRIDE_DIRECTIONALITY = 2, 
+	// Whether the text is composed vertically. Leave unset for horizontal text.
+	VERTICAL = 4, 
+	// Whether the tab width parameter is in pixels. Leave unset for tab width in terms of space-widths.
+	TAB_WIDTH_PIXELS = 8, 
+	// Whether to ignore soft line-breaks  even when a non-zero text area width is provided. 
+	IGNORE_SOFT_BREAKS = 16,
+	// Truncate text if it runs out of bounds
+	TRUNCATE = 32,
+};
+
+RICHTEXT_DEFINE_ENUM_BITFLAG_OPERATORS(LayoutInfoFlags)
+
 struct LayoutBuildParams {
+	// Text area width for calculating soft line breaks and text truncation. Setting this to 0 will disable
+	// both.
 	float textAreaWidth;
 	float textAreaHeight;
 	float tabWidth;
@@ -68,6 +90,9 @@ class LayoutBuilder {
 			uint32_t glyphEndIndex;
 		};
 
+		struct ParagraphBuildParams;
+		struct ParagraphBuildResult;
+
 		icu::BreakIterator* m_lineBreakIterator{};
 		hb_buffer_t* m_buffer{};
 		std::vector<uint32_t> m_glyphs;
@@ -85,18 +110,15 @@ class LayoutBuilder {
 				const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params,
 				FunctorRefWrapper<float(size_t, float)>&& lineWidthProvider);
 
-		size_t build_paragraph(LayoutInfo& result, _SBParagraph* sbParagraph, const char* fullText,
-				int32_t paragraphLength, int32_t paragraphStart, ValueRunsIterator<Font>& itFont,
-				MaybeDefaultRunsIterator<bool>& itSmallcaps, MaybeDefaultRunsIterator<bool>& itSubscript,
-				MaybeDefaultRunsIterator<bool>& itSuperscript, int32_t textAreaWidthFixed,
-				int32_t tabWidthFixed, const icu::Locale& defaultLocale, bool tabWidthFromPixels,
-				bool vertical, FunctorRefWrapper<float(size_t, float)>& lineWidthProvider);
+		ParagraphBuildResult build_paragraph(LayoutInfo& result, _SBParagraph* sbParagraph,
+				const char* fullText, int32_t paragraphLength, int32_t paragraphStart,
+				ParagraphBuildParams& params, FunctorRefWrapper<float(size_t, float)>& lineWidthProvider);
 		void shape_logical_run(const SingleScriptFont& font, const char* paragraphText, int32_t offset,
 				int32_t count, int32_t paragraphStart, int32_t paragraphLength, int script,
 				const icu::Locale& locale, bool reversed, bool vertical);
-		void compute_line_visual_runs(LayoutInfo& result, _SBParagraph* sbParagraph, const char* chars,
+		bool compute_line_visual_runs(LayoutInfo& result, _SBParagraph* sbParagraph, const char* chars,
 				int32_t count, int32_t lineStart, int32_t lineEnd, size_t& highestRun,
-				int32_t& highestRunCharEnd, bool vertical);
+				int32_t& highestRunCharEnd, float textAreaHeight, bool truncate, bool vertical);
 		void append_visual_run(LayoutInfo& result, size_t logicalRunIndex, int32_t charStartIndex,
 				int32_t charEndIndex, int32_t& visualRunWidth, size_t& highestRun, int32_t& highestRunCharEnd,
 				bool reversed, bool vertical);

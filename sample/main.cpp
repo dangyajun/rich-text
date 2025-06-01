@@ -5,11 +5,12 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "image.hpp"
 #include "pipeline.hpp"
 #include "text_atlas.hpp"
 #include "msdf_text_atlas.hpp"
 
+#include "collidable_text_box.hpp"
+#include "draggable_frame.hpp"
 #include "text_box.hpp"
 #include "tool_bar.hpp"
 #include "tool_bar_menu.hpp"
@@ -51,7 +52,7 @@ int main() {
 	}
 
 	auto family = Text::FontRegistry::get_family("Noto Sans");
-	Text::Font font(family, Text::FontWeight::REGULAR, Text::FontStyle::NORMAL, 48);
+	Text::Font font(family, Text::FontWeight::REGULAR, Text::FontStyle::NORMAL, 32);
 
 	auto container = UIContainer::create();
 
@@ -76,13 +77,25 @@ int main() {
 	g_textAtlas = new TextAtlas;
 	g_msdfTextAtlas = new MSDFTextAtlas;
 
-	auto textBox = TextBox::create();
+	//auto textBox = TextBox::create();
+	auto textBox = CollidableTextBox::create();
 	textBox->set_name("TextBox");
-	textBox->set_rich_text(true);
+	//textBox->set_rich_text(true);
 	textBox->set_font(font);
+	//textBox->set_text_wrapped(false);
 	textBox->set_position(INSET, ToolBar::TOOL_BAR_HEIGHT);
 	textBox->set_size(g_width - 2 * INSET, g_height - INSET - ToolBar::TOOL_BAR_HEIGHT);
 	textBox->set_parent(container.get());
+
+	auto collider = DraggableFrame::create();
+	collider->set_name("Collider");
+	collider->set_size(100, 100);
+	collider->set_background_color({});
+	collider->set_border_color({0, 0, 0, 1});
+	collider->set_position(100, 100);
+	collider->set_parent(container.get());
+
+	textBox->set_collider(collider);
 
 	set_up_toolbar(*container);
 	
@@ -224,4 +237,3 @@ static void set_up_toolbar(UIContainer& container) {
 		CVars::showGlyphBoundaries = btn.is_selected();
 	});
 }
-

@@ -4,7 +4,7 @@
 
 #include "ui_object.hpp"
 
-class Frame final : public UIObject {
+class Frame : public UIObject {
 	public:
 		static std::shared_ptr<Frame> create();
 

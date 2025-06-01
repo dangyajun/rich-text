@@ -97,6 +97,26 @@ static constexpr int32_t mul_fixed(int32_t a, int32_t b) {
 	return static_cast<int32_t>(ab >> 6);
 }
 
+struct LayoutBuilder::ParagraphBuildParams {
+	ValueRunsIterator<Font> itFont;
+	MaybeDefaultRunsIterator<bool> itSmallcaps;
+	MaybeDefaultRunsIterator<bool> itSubscript;
+	MaybeDefaultRunsIterator<bool> itSuperscript;
+	const icu::Locale& defaultLocale;
+	int32_t textAreaWidthFixed;
+	int32_t tabWidthFixed;
+	float textAreaHeight;
+	bool truncate;
+	bool skipSoftLineBreaking;
+	bool tabWidthFromPixels;
+	bool vertical;
+};
+
+struct LayoutBuilder::ParagraphBuildResult {
+	size_t lastHighestRun;
+	bool reachedTruncationPoint;
+};
+
 LayoutBuilder::LayoutBuilder()
 		: m_buffer(hb_buffer_create()) {
 	UErrorCode err{U_ZERO_ERROR};
@@ -174,10 +194,21 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 	SBAlgorithmRef sbAlgorithm = SBAlgorithmCreate(&codepointSequence);
 	size_t paragraphOffset{};	
 
-	ValueRunsIterator itFont(fontRuns);
-	MaybeDefaultRunsIterator itSmallcaps(params.pSmallcapsRuns, false, count);
-	MaybeDefaultRunsIterator itSubscript(params.pSubscriptRuns, false, count);
-	MaybeDefaultRunsIterator itSuperscript(params.pSuperscriptRuns, false, count);
+	ParagraphBuildParams paragraphParams{
+		.itFont = ValueRunsIterator(fontRuns),
+		.itSmallcaps = MaybeDefaultRunsIterator(params.pSmallcapsRuns, false, count),
+		.itSubscript = MaybeDefaultRunsIterator(params.pSubscriptRuns, false, count),
+		.itSuperscript = MaybeDefaultRunsIterator(params.pSuperscriptRuns, false, count),
+		.defaultLocale = icu::Locale::getDefault(),
+		// 26.6 fixed-point metrics
+		.textAreaWidthFixed = static_cast<int32_t>(params.textAreaWidth * 64.f),
+		.tabWidthFixed = static_cast<int32_t>(params.tabWidth * 64.f),
+		.textAreaHeight = params.textAreaHeight,
+		.truncate = (params.flags & LayoutInfoFlags::TRUNCATE) != LayoutInfoFlags::NONE,
+		.skipSoftLineBreaking = (params.flags & LayoutInfoFlags::IGNORE_SOFT_BREAKS) != LayoutInfoFlags::NONE,
+		.tabWidthFromPixels = (params.flags & LayoutInfoFlags::TAB_WIDTH_PIXELS) != LayoutInfoFlags::NONE,
+		.vertical = (params.flags & LayoutInfoFlags::VERTICAL) != LayoutInfoFlags::NONE,
+	};
 
 	size_t lastHighestRun = 0;
 
@@ -191,15 +222,6 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 				? SBLevelDefaultLTR : SBLevelDefaultRTL;
 	}
 
-	// 26.6 fixed-point metrics
-	auto fixedTextAreaWidth = static_cast<int32_t>(params.textAreaWidth * 64.f);
-	auto tabWidthFixed = static_cast<int32_t>(params.tabWidth * 64.f);
-
-	bool usePixelTabWidth = (params.flags & LayoutInfoFlags::TAB_WIDTH_PIXELS) != LayoutInfoFlags::NONE;
-	bool vertical = (params.flags & LayoutInfoFlags::VERTICAL) != LayoutInfoFlags::NONE;
-
-	auto& locale = icu::Locale::getDefault();
-
 	while (paragraphOffset < count) {
 		size_t paragraphLength, separatorLength;
 		SBAlgorithmGetParagraphBoundary(sbAlgorithm, paragraphOffset, INT32_MAX, &paragraphLength,
@@ -211,10 +233,15 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 			
 			SBParagraphRef sbParagraph = SBAlgorithmCreateParagraph(sbAlgorithm, paragraphOffset,
 					paragraphLength, baseDefaultLevel);
-			lastHighestRun = build_paragraph(result, sbParagraph, chars, byteCount, paragraphOffset, itFont,
-					itSmallcaps, itSubscript, itSuperscript, fixedTextAreaWidth, tabWidthFixed, locale,
-					usePixelTabWidth, vertical, lineWidthProvider);
+			auto res = build_paragraph(result, sbParagraph, chars, byteCount, paragraphOffset,
+					paragraphParams, lineWidthProvider);
 			SBParagraphRelease(sbParagraph);
+
+			lastHighestRun = res.lastHighestRun;
+
+			if (res.reachedTruncationPoint) {
+				break;
+			}
 		}
 		else {
 			auto font = fontRuns.get_value(paragraphOffset == count ? count - 1 : paragraphOffset);
@@ -250,12 +277,9 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 	SBAlgorithmRelease(sbAlgorithm);
 }
 
-size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParagraph, const char* fullText,
-		int32_t paragraphLength, int32_t paragraphStart, ValueRunsIterator<Font>& itFont,
-		MaybeDefaultRunsIterator<bool>& itSmallcaps, MaybeDefaultRunsIterator<bool>& itSubscript,
-		MaybeDefaultRunsIterator<bool>& itSuperscript, int32_t textAreaWidth, int32_t tabWidthFixed,
-		const icu::Locale& defaultLocale, bool tabWidthFromPixels, bool vertical,
-		FunctorRefWrapper<float(size_t, float)>& lineWidthProvider) {
+LayoutBuilder::ParagraphBuildResult LayoutBuilder::build_paragraph(LayoutInfo& result,
+		SBParagraphRef sbParagraph, const char* fullText, int32_t paragraphLength, int32_t paragraphStart,
+		ParagraphBuildParams& params, FunctorRefWrapper<float(size_t, float)>& lineWidthProvider) {
 	const char* paragraphText = fullText + paragraphStart;
 	auto paragraphEnd = paragraphStart + paragraphLength;
 
@@ -274,7 +298,7 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 					script, smallcaps, subscript, superscript);
 
 			shape_logical_run(subFont, paragraphText, runStart - paragraphStart, subFontOffset - runStart,
-					paragraphStart, paragraphLength, script, defaultLocale, level & 1, vertical);
+					paragraphStart, paragraphLength, script, params.defaultLocale, level & 1, params.vertical);
 
 			if (!m_logicalRuns.empty() && m_logicalRuns.back().font == subFont) {
 				m_logicalRuns.back().charEndIndex = subFontOffset;
@@ -288,7 +312,7 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 				});
 			}
 		}
-	}, itFont, itScripts, itLevels, itSmallcaps, itSubscript, itSuperscript);
+	}, params.itFont, itScripts, itLevels, params.itSmallcaps, params.itSubscript, params.itSuperscript);
 
 	// Finalize the last advance after the last character in the paragraph
 	m_glyphPositions[1].emplace_back(m_cursor);
@@ -296,12 +320,13 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 	size_t highestRun{};
 	int32_t highestRunCharEnd{INT32_MIN};
 
-	// If width == 0, perform no line breaking
-	if (textAreaWidth == 0) {
-		apply_tab_widths_no_line_break(fullText, tabWidthFixed, tabWidthFromPixels);
-		compute_line_visual_runs(result, sbParagraph, paragraphText, paragraphLength, paragraphStart,
-				paragraphEnd, highestRun, highestRunCharEnd, vertical);
-		return highestRun;
+	// Can skip breaking up the lines if there is no width provided, or it's not required for truncation
+	if (params.textAreaWidthFixed == 0 || (params.skipSoftLineBreaking && !params.truncate)) {
+		apply_tab_widths_no_line_break(fullText, params.tabWidthFixed, params.tabWidthFromPixels);
+		bool reachedTruncationPoint = compute_line_visual_runs(result, sbParagraph, paragraphText,
+				paragraphLength, paragraphStart, paragraphEnd, highestRun, highestRunCharEnd, 
+				params.textAreaHeight, params.truncate, params.vertical);
+		return {highestRun, reachedTruncationPoint};
 	}
 
 	// Find line breaks
@@ -313,7 +338,7 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 	int32_t lineEnd = paragraphStart;
 	int32_t lineStart;
 
-	while (lineEnd < paragraphStart + paragraphLength) {
+	while (lineEnd < paragraphEnd) {
 		int32_t lineWidthSoFar{};
 
 		auto fixedLineWidth = static_cast<int32_t>(lineWidthProvider(result.get_line_count(),
@@ -327,8 +352,8 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 
 		while (glyphIndex < m_glyphs.size()) {
 			if (fullText[m_charIndices[glyphIndex]] == '\t') {
-				auto baseTabWidth = tabWidthFromPixels ? tabWidthFixed
-						: mul_fixed(m_glyphPositions[0][glyphIndex], tabWidthFixed);
+				auto baseTabWidth = params.tabWidthFromPixels ? params.tabWidthFixed
+						: mul_fixed(m_glyphPositions[0][glyphIndex], params.tabWidthFixed);
 				m_glyphPositions[0][glyphIndex] = baseTabWidth - (lineWidthSoFar % baseTabWidth);
 			}
 
@@ -361,25 +386,33 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 		}
 
 		if (lineEnd <= lineStart && glyphIndex == m_glyphs.size()) {
-			lineEnd = paragraphStart + paragraphLength;
+			lineEnd = paragraphEnd;
 		}
 
 		// Adjust tab widths for glyphs included in the line after the line width calculation before
 		for (; glyphIndexBefore < glyphIndex; ++glyphIndexBefore) {
 			if (fullText[m_charIndices[glyphIndexBefore]] == '\t') {
-				auto baseTabWidth = tabWidthFromPixels ? tabWidthFixed
-						: mul_fixed(m_glyphPositions[0][glyphIndexBefore], tabWidthFixed);
+				auto baseTabWidth = params.tabWidthFromPixels ? params.tabWidthFixed
+						: mul_fixed(m_glyphPositions[0][glyphIndexBefore], params.tabWidthFixed);
 				m_glyphPositions[0][glyphIndexBefore] = baseTabWidth - (lineWidthSoFar % baseTabWidth);
 			}
 
 			lineWidthSoFar += m_glyphPositions[0][glyphIndexBefore];
 		}
 
-		compute_line_visual_runs(result, sbParagraph, paragraphText, paragraphLength, lineStart, lineEnd,
-				highestRun, highestRunCharEnd, vertical);
+		bool reachedTruncationPoint = compute_line_visual_runs(result, sbParagraph, paragraphText,
+				paragraphLength, lineStart, lineEnd, highestRun, highestRunCharEnd, params.textAreaHeight,
+				params.truncate, params.vertical);
+
+		reachedTruncationPoint = reachedTruncationPoint
+				|| (params.skipSoftLineBreaking && lineEnd != paragraphEnd);
+
+		if (reachedTruncationPoint) {
+			return {highestRun, true};
+		}
 	}
 
-	return highestRun;
+	return {highestRun, false};
 }
 
 void LayoutBuilder::shape_logical_run(const SingleScriptFont& font, const char* paragraphText,
@@ -494,15 +527,19 @@ void LayoutBuilder::shape_logical_run(const SingleScriptFont& font, const char* 
 	}
 }
 
-void LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef sbParagraph, const char* chars,
+bool LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef sbParagraph, const char* chars,
 		int32_t count, int32_t lineStart, int32_t lineEnd, size_t& highestRun, int32_t& highestRunCharEnd,
-		bool vertical) {
+		float textAreaHeight, bool truncate, bool vertical) {
 	SBLineRef sbLine = SBParagraphCreateLine(sbParagraph, lineStart, lineEnd - lineStart);
 	auto runCount = SBLineGetRunCount(sbLine);
 	auto* sbRuns = SBLineGetRunsPtr(sbLine);
 	float maxAscent{};
 	float maxDescent{};
 	int32_t visualRunWidth{};
+
+	auto runCountBefore = result.get_run_count();
+	auto highestRunBefore = highestRun;
+	auto highestRunCharEndBefore = highestRunCharEnd;
 
 	for (int32_t i = 0; i < runCount; ++i) {
 		int32_t logicalStart, runLength;
@@ -574,9 +611,21 @@ void LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef 
 		}
 	}
 
-	result.append_line(maxAscent - maxDescent, maxAscent);
-	
 	SBLineRelease(sbLine);
+
+	if (truncate && textAreaHeight != 0.f
+			&& result.get_text_height() + (maxAscent - maxDescent) > textAreaHeight) {
+		result.pop_runs_until(runCountBefore);
+		highestRun = highestRunBefore;
+		highestRunCharEnd = highestRunCharEndBefore;
+
+		return true;
+	}
+	else {
+		result.append_line(maxAscent - maxDescent, maxAscent);
+	}
+
+	return false;
 }
 
 void LayoutBuilder::append_visual_run(LayoutInfo& result, size_t run, int32_t charStartIndex,
