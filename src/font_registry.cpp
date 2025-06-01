@@ -56,6 +56,7 @@ struct FamilyData {
 	std::vector<FontFamily> linkedFamilies;
 	std::vector<FontFamily> fallbackFamilies;
 	std::bitset<USCRIPT_CODE_LIMIT> scripts;
+	std::string name;
 	bool initialized{};
 
 	FaceDataHandle get_face_data_handle(FontWeight weight, FontStyle style) const {
@@ -166,7 +167,7 @@ struct FontContext {
 
 }
 
-thread_local FontContext t_fontContext;
+thread_local size_t t_idxFontContext{static_cast<size_t>(~0ull)};
 
 static std::shared_mutex g_mutex;
 
@@ -175,6 +176,9 @@ static std::unordered_map<std::string, FaceDataHandle, StringHash, std::equal_to
 
 static std::vector<FamilyData> g_familyData;
 static std::unordered_map<std::string, FontFamily, StringHash, std::equal_to<>> g_familiesByName;
+
+static std::vector<std::unique_ptr<FontContext>> g_fontContexts;
+static std::mutex g_contextMutex;
 
 static FileMappingFunctions g_fileFuncs {
 	.pfnMapFile = map_file_default,
@@ -214,6 +218,10 @@ FontFace FontRegistry::get_face(std::string_view familyName, FontWeight weight, 
 	return FontFace(get_family(familyName), weight, style);
 }
 
+std::string_view FontRegistry::get_family_name(FontFamily family) {
+	return g_familyData[family.handle].name;
+}
+
 FaceDataHandle FontRegistry::get_face_data_handle(Font font) {
 	std::shared_lock lock(g_mutex);
 	assert(font && "FontRegistry::get_face must be called with a valid font");
@@ -246,12 +254,28 @@ FontData FontRegistry::get_font_data(SingleScriptFont font) {
 			font.syntheticSubscript, font.syntheticSuperscript);
 }
 
+static FontContext& get_font_context() {
+	std::unique_lock lock(g_contextMutex);
+
+	if (t_idxFontContext >= g_fontContexts.size()) {
+		auto pCtx = std::make_unique<FontContext>();
+		auto* result = pCtx.get();
+		t_idxFontContext = static_cast<int>(g_fontContexts.size());
+		g_fontContexts.emplace_back(std::move(pCtx));
+		return *result;
+	}
+
+	return *g_fontContexts[t_idxFontContext];
+}
+
 FontData FontRegistry::get_font_data(FaceDataHandle face, uint32_t size, FontWeight targetWeight,
 		FontStyle targetStyle, bool syntheticSmallCaps, bool syntheticSubscript, bool syntheticSuperscript) {
+	auto& fontContext = get_font_context();
+
 	auto effectiveSize = calc_effective_font_size(size, syntheticSmallCaps,
 			syntheticSubscript || syntheticSuperscript);
 
-	if (auto it = t_fontContext.cache.find(face.handle); it != t_fontContext.cache.end()) {
+	if (auto it = fontContext.cache.find(face.handle); it != fontContext.cache.end()) {
 		it->second.resize(effectiveSize);
 		return it->second.get_font_data(face.sourceWeight, face.sourceStyle, targetWeight, targetStyle,
 				syntheticSmallCaps, syntheticSubscript, syntheticSuperscript);
@@ -284,7 +308,7 @@ FontData FontRegistry::get_font_data(FaceDataHandle face, uint32_t size, FontWei
 		return {};
 	}
 
-	if (FT_New_Memory_Face(t_fontContext.lib, reinterpret_cast<const FT_Byte*>(fileData), fileSize, 0,
+	if (FT_New_Memory_Face(fontContext.lib, reinterpret_cast<const FT_Byte*>(fileData), fileSize, 0,
 			&fontData.ftFace) != 0) {
 		return {};
 	}
@@ -309,7 +333,7 @@ FontData FontRegistry::get_font_data(FaceDataHandle face, uint32_t size, FontWei
 	fontData.spaceGlyphIndex = FT_Get_Char_Index(fontData.ftFace, ' ');
 	fontData.spaceAdvance = hb_font_get_glyph_h_advance(fontData.hbFont, fontData.spaceGlyphIndex);
 
-	t_fontContext.cache.emplace(std::make_pair(face.handle, FontDataOwner(fontData, size)));
+	fontContext.cache.emplace(std::make_pair(face.handle, FontDataOwner(fontData, size)));
 
 	return fontData;
 }
@@ -404,6 +428,17 @@ SingleScriptFont FontRegistry::get_sub_font(Text::Font font, const char16_t* tex
 
 void FontRegistry::set_file_mapping_functions(const FileMappingFunctions& funcs) {
 	g_fileFuncs = funcs;
+}
+
+void FontRegistry::clear() {
+	std::unique_lock globalLock(g_mutex);
+	std::unique_lock contextLock(g_contextMutex);
+
+	g_fontContexts.clear();
+	g_faces.clear();
+	g_familyData.clear();
+	g_facesByName.clear();
+	g_familiesByName.clear();
 }
 
 // Static Functions
@@ -555,6 +590,7 @@ static FontFamily get_or_add_family(const std::string_view& name) {
 	FontFamily result{static_cast<FamilyIndex_T>(g_familyData.size())};
 	g_familiesByName.emplace(std::make_pair(std::string(name), result));
 	g_familyData.emplace_back();
+	g_familyData.back().name = name;
 
 	return result;
 }

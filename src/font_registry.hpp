@@ -56,6 +56,11 @@ namespace Text::FontRegistry {
 		FontStyle style = FontStyle::NORMAL);
 
 /**
+ * Get the name of the font family
+ */
+std::string_view get_family_name(FontFamily);
+
+/**
  * Gets the face data handle corresponding to the given font handle.
  * Must be called with a valid font handle.
  *
@@ -139,6 +144,11 @@ namespace Text::FontRegistry {
  * @see FileMapping
  */
 void set_file_mapping_functions(const FileMappingFunctions& funcs);
+
+/**
+ * Clears the font registry
+ */
+void clear();
 
 }
 
