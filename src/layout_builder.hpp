@@ -1,6 +1,7 @@
 #pragma once
 
 #include "font.hpp"
+#include "functor_ref_wrapper.hpp"
 #include "text_alignment.hpp"
 
 #include <unicode/uversion.h>
@@ -50,6 +51,16 @@ class LayoutBuilder {
 
 		void build_layout_info(LayoutInfo&, const char* chars, int32_t count, const ValueRuns<Font>& fontRuns,
 				const LayoutBuildParams& params);
+
+		/**
+		 * Builds the layout info using an additional LineWidthProvider which is used in place of the
+		 * textAreaWidth to determine line breaking limits at a per-line level. The functor provides
+		 * the line number and paragraph height so far (aka the totalDescent of this line, retrievable
+		 * later from the LayoutInfo).
+		 */
+		template <typename LineWidthProvider>
+		void build_layout_info(LayoutInfo&, const char* chars, int32_t count, const ValueRuns<Font>& fontRuns,
+				const LayoutBuildParams& params, LineWidthProvider&& lineWidthProvider);
 	private:
 		struct LogicalRun {
 			SingleScriptFont font;
@@ -70,12 +81,16 @@ class LayoutBuilder {
 
 		std::vector<LogicalRun> m_logicalRuns;
 
+		void build_layout_info_internal(LayoutInfo&, const char* chars, int32_t count,
+				const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params,
+				FunctorRefWrapper<float(size_t, float)>&& lineWidthProvider);
+
 		size_t build_paragraph(LayoutInfo& result, _SBParagraph* sbParagraph, const char* fullText,
 				int32_t paragraphLength, int32_t paragraphStart, ValueRunsIterator<Font>& itFont,
 				MaybeDefaultRunsIterator<bool>& itSmallcaps, MaybeDefaultRunsIterator<bool>& itSubscript,
 				MaybeDefaultRunsIterator<bool>& itSuperscript, int32_t textAreaWidthFixed,
 				int32_t tabWidthFixed, const icu::Locale& defaultLocale, bool tabWidthFromPixels,
-				bool vertical);
+				bool vertical, FunctorRefWrapper<float(size_t, float)>& lineWidthProvider);
 		void shape_logical_run(const SingleScriptFont& font, const char* paragraphText, int32_t offset,
 				int32_t count, int32_t paragraphStart, int32_t paragraphLength, int script,
 				const icu::Locale& locale, bool reversed, bool vertical);
@@ -92,5 +107,12 @@ class LayoutBuilder {
 		void reset(size_t capacity);
 };
 
+template <typename LineWidthProvider>
+void LayoutBuilder::build_layout_info(LayoutInfo& info, const char* chars, int32_t count,
+		const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params,
+		LineWidthProvider&& lineWidthProvider) {
+	build_layout_info_internal(info, chars, count, fontRuns, params,
+			FunctorRefWrapper<float(size_t, float)>(lineWidthProvider));
 }
 
+}

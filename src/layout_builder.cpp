@@ -131,6 +131,15 @@ LayoutBuilder& LayoutBuilder::operator=(LayoutBuilder&& other) noexcept {
 	return *this;
 }
 
+void LayoutBuilder::build_layout_info(LayoutInfo& info, const char* chars, int32_t count,
+		const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params) {
+	auto lineWidthProvider = [width=params.textAreaWidth](size_t, float) {
+		return width;
+	};
+
+	build_layout_info_internal(info, chars, count, fontRuns, params, lineWidthProvider);
+}
+
 /**
  * ALGORITHM:
  * 1. Split the string by paragraph boundaries (hard line breaks) (UBA P1)
@@ -156,8 +165,9 @@ LayoutBuilder& LayoutBuilder::operator=(LayoutBuilder&& other) noexcept {
  * 3. Line breaking (step 2e) requires positions and charIndices to be in logical order to calculate widths
  *    (UBA L1.1).
  */
-void LayoutBuilder::build_layout_info(LayoutInfo& result, const char* chars, int32_t count,
-		const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params) {
+void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* chars, int32_t count,
+		const ValueRuns<Font>& fontRuns, const LayoutBuildParams& params,
+		FunctorRefWrapper<float(size_t, float)>&& lineWidthProvider) {
 	result.clear();
 
 	SBCodepointSequence codepointSequence{SBStringEncodingUTF8, (void*)chars, (size_t)count};
@@ -203,7 +213,7 @@ void LayoutBuilder::build_layout_info(LayoutInfo& result, const char* chars, int
 					paragraphLength, baseDefaultLevel);
 			lastHighestRun = build_paragraph(result, sbParagraph, chars, byteCount, paragraphOffset, itFont,
 					itSmallcaps, itSubscript, itSuperscript, fixedTextAreaWidth, tabWidthFixed, locale,
-					usePixelTabWidth, vertical);
+					usePixelTabWidth, vertical, lineWidthProvider);
 			SBParagraphRelease(sbParagraph);
 		}
 		else {
@@ -244,7 +254,8 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 		int32_t paragraphLength, int32_t paragraphStart, ValueRunsIterator<Font>& itFont,
 		MaybeDefaultRunsIterator<bool>& itSmallcaps, MaybeDefaultRunsIterator<bool>& itSubscript,
 		MaybeDefaultRunsIterator<bool>& itSuperscript, int32_t textAreaWidth, int32_t tabWidthFixed,
-		const icu::Locale& defaultLocale, bool tabWidthFromPixels, bool vertical) {
+		const icu::Locale& defaultLocale, bool tabWidthFromPixels, bool vertical,
+		FunctorRefWrapper<float(size_t, float)>& lineWidthProvider) {
 	const char* paragraphText = fullText + paragraphStart;
 	auto paragraphEnd = paragraphStart + paragraphLength;
 
@@ -305,6 +316,9 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 	while (lineEnd < paragraphStart + paragraphLength) {
 		int32_t lineWidthSoFar{};
 
+		auto fixedLineWidth = static_cast<int32_t>(lineWidthProvider(result.get_line_count(),
+				result.get_text_height()) * 64.f);
+
 		lineStart = lineEnd;
 
 		auto glyphIndex = binary_search(0, m_charIndices.size(), [&](auto index) {
@@ -318,7 +332,7 @@ size_t LayoutBuilder::build_paragraph(LayoutInfo& result, SBParagraphRef sbParag
 				m_glyphPositions[0][glyphIndex] = baseTabWidth - (lineWidthSoFar % baseTabWidth);
 			}
 
-			if (lineWidthSoFar + m_glyphPositions[0][glyphIndex] > textAreaWidth) {
+			if (lineWidthSoFar + m_glyphPositions[0][glyphIndex] > fixedLineWidth) {
 				break;
 			}
 
