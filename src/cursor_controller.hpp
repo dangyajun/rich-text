@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cursor_position.hpp"
+#include "functor_ref_wrapper.hpp"
 #include "text_alignment.hpp"
 
 #include <unicode/uversion.h>
@@ -41,13 +42,26 @@ class CursorController {
 		CursorPosition closest_to_position(const LayoutInfo&, float textAreaWidth, XAlignment, float posX,
 				float posY);
 
+		template <typename LineOffsetProvider>
+		CursorPosition closest_to_position(const LayoutInfo&, float textAreaWidth, XAlignment, float posX,
+				float posY, LineOffsetProvider&&);
+
 		std::string_view get_text() const {
 			return m_text;
 		}
 	private:
 		icu::BreakIterator* m_iter;
 		std::string_view m_text;
+
+		CursorPosition closest_to_position_internal(const LayoutInfo&, float, XAlignment, float, float,
+				FunctorRefWrapper<float(size_t)>&& lineOffsetProvider);
 };
+
+template <typename LineOffsetProvider>
+CursorPosition CursorController::closest_to_position(const LayoutInfo& layout, float textAreaWidth,
+		XAlignment xAlignment, float posX, float posY, LineOffsetProvider&& lineOffsetProvider) {
+	return closest_to_position_internal(layout, textAreaWidth, xAlignment, posX, posY, lineOffsetProvider);
+}
 
 }
 

@@ -122,11 +122,23 @@ CursorPosition CursorController::closest_in_line(const LayoutInfo& layout, float
 
 CursorPosition CursorController::closest_to_position(const LayoutInfo& layout, float textAreaWidth,
 		XAlignment textXAlignment, float posX, float posY) {
+	auto offsetProvider = [](size_t) {
+		return 0.f;
+	};
+
+	return closest_to_position_internal(layout, textAreaWidth, textXAlignment, posX, posY, offsetProvider);
+}
+
+CursorPosition CursorController::closest_to_position_internal(const LayoutInfo& layout, float textAreaWidth,
+		XAlignment textXAlignment, float posX, float posY,
+		FunctorRefWrapper<float(size_t)>&& lineOffsetProvider) {
 	auto lineIndex = layout.get_closest_line_to_height(posY);
 
 	if (lineIndex == layout.get_line_count()) {
 		lineIndex = layout.get_line_count() - 1;
 	}
+
+	posX -= lineOffsetProvider(lineIndex);
 
 	return layout.find_closest_cursor_position(textAreaWidth, textXAlignment, *m_iter, lineIndex, posX);
 }
