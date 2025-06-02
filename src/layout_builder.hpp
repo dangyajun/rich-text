@@ -42,6 +42,9 @@ enum class LayoutInfoFlags : uint8_t {
 	IGNORE_SOFT_BREAKS = 16,
 	// Truncate text if it runs out of bounds
 	TRUNCATE = 32,
+	// If line breaking encounters an empty first line, allow it to skip down instead of forcing a minimum
+	// 1 character.
+	ALLOW_EMPTY_FIRST_LINE = 64,
 };
 
 RICHTEXT_DEFINE_ENUM_BITFLAG_OPERATORS(LayoutInfoFlags)

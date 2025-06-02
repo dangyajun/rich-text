@@ -102,6 +102,7 @@ struct LayoutBuilder::ParagraphBuildParams {
 	MaybeDefaultRunsIterator<bool> itSmallcaps;
 	MaybeDefaultRunsIterator<bool> itSubscript;
 	MaybeDefaultRunsIterator<bool> itSuperscript;
+	const ValueRuns<Font>& fontRuns;
 	const icu::Locale& defaultLocale;
 	int32_t textAreaWidthFixed;
 	int32_t tabWidthFixed;
@@ -109,6 +110,7 @@ struct LayoutBuilder::ParagraphBuildParams {
 	bool truncate;
 	bool skipSoftLineBreaking;
 	bool tabWidthFromPixels;
+	bool allowEmptyFirstLine;
 	bool vertical;
 };
 
@@ -199,6 +201,7 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 		.itSmallcaps = MaybeDefaultRunsIterator(params.pSmallcapsRuns, false, count),
 		.itSubscript = MaybeDefaultRunsIterator(params.pSubscriptRuns, false, count),
 		.itSuperscript = MaybeDefaultRunsIterator(params.pSuperscriptRuns, false, count),
+		.fontRuns = fontRuns,
 		.defaultLocale = icu::Locale::getDefault(),
 		// 26.6 fixed-point metrics
 		.textAreaWidthFixed = static_cast<int32_t>(params.textAreaWidth * 64.f),
@@ -207,6 +210,8 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 		.truncate = (params.flags & LayoutInfoFlags::TRUNCATE) != LayoutInfoFlags::NONE,
 		.skipSoftLineBreaking = (params.flags & LayoutInfoFlags::IGNORE_SOFT_BREAKS) != LayoutInfoFlags::NONE,
 		.tabWidthFromPixels = (params.flags & LayoutInfoFlags::TAB_WIDTH_PIXELS) != LayoutInfoFlags::NONE,
+		.allowEmptyFirstLine = (params.flags & LayoutInfoFlags::ALLOW_EMPTY_FIRST_LINE)
+				!= LayoutInfoFlags::NONE,
 		.vertical = (params.flags & LayoutInfoFlags::VERTICAL) != LayoutInfoFlags::NONE,
 	};
 
@@ -365,6 +370,27 @@ LayoutBuilder::ParagraphBuildResult LayoutBuilder::build_paragraph(LayoutInfo& r
 			++glyphIndex;
 		}
 
+		// Line couldn't fit any characters, but there is no option to try another line or continue forward,
+		// just stop here.
+		if (lineWidthSoFar == 0 && params.truncate && params.skipSoftLineBreaking) {
+			return {highestRun, true};
+		}
+		// Line can't fit any characters, but we will allow an empty line to be produced if the algorithm
+		// can tolerate it without looping infinitely (a valid height bound exists).
+		else if (lineWidthSoFar == 0 && (
+				(result.get_line_count() == 0 && params.allowEmptyFirstLine)
+				|| (params.truncate && params.textAreaHeight > 0.f) )) {
+			lineEnd = glyphIndex == m_glyphs.size() ? paragraphEnd : m_charIndices[glyphIndex];
+			auto font = params.fontRuns.get_value(lineEnd == paragraphEnd ? lineEnd - 1 : lineEnd);
+			auto fontData = FontRegistry::get_font_data(font);
+			auto height = fontData.get_ascent() - fontData.get_descent();
+
+			result.append_empty_line(FontRegistry::get_default_single_script_font(font), lineEnd, height,
+					fontData.get_ascent());
+
+			continue;
+		}
+
 		auto glyphIndexBefore = glyphIndex;
 
 		// If no glyphs fit on the line, force one to fit. There shouldn't be any zero width glyphs at the start
@@ -374,8 +400,7 @@ LayoutBuilder::ParagraphBuildResult LayoutBuilder::build_paragraph(LayoutInfo& r
 			++glyphIndex;
 		}
 
-		auto charIndex = glyphIndex == m_glyphs.size() ? paragraphLength + paragraphStart
-				: m_charIndices[glyphIndex];
+		auto charIndex = glyphIndex == m_glyphs.size() ? paragraphEnd : m_charIndices[glyphIndex];
 		lineEnd = find_previous_line_break(*m_lineBreakIterator, paragraphText, paragraphLength,
 				charIndex - paragraphStart) + paragraphStart;
 
