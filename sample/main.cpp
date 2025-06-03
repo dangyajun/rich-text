@@ -77,17 +77,18 @@ int main() {
 	g_textAtlas = new TextAtlas;
 	g_msdfTextAtlas = new MSDFTextAtlas;
 
-	//auto textBox = TextBox::create();
-	auto textBox = CollidableTextBox::create();
+	auto textBox = TextBox::create();
+	//auto textBox = CollidableTextBox::create();
 	textBox->set_name("TextBox");
-	//textBox->set_rich_text(true);
+	textBox->set_rich_text(true);
 	textBox->set_font(font);
 	//textBox->set_text_wrapped(false);
 	textBox->set_position(INSET, ToolBar::TOOL_BAR_HEIGHT);
 	textBox->set_size(g_width - 2 * INSET, g_height - INSET - ToolBar::TOOL_BAR_HEIGHT);
+	//textBox->set_editable(false);
 	textBox->set_parent(container.get());
 
-	auto collider = DraggableFrame::create();
+	/*auto collider = DraggableFrame::create();
 	collider->set_name("Collider");
 	collider->set_size(100, 100);
 	collider->set_background_color({});
@@ -95,7 +96,7 @@ int main() {
 	collider->set_position(100, 100);
 	collider->set_parent(container.get());
 
-	textBox->set_collider(collider);
+	textBox->set_collider(collider);*/
 
 	set_up_toolbar(*container);
 	
@@ -202,6 +203,42 @@ static void render(UIContainer& container) {
 	glClearColor(1.f, 1.f, 1.f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	container.render();
+
+	if (auto* pTextBox = container.find_first_child("TextBox")) {
+		auto& textBox = static_cast<TextBox&>(*pTextBox);
+
+		if (!textBox.is_focused()) {
+			size_t idx = 0;
+			size_t contentTextShift = 0;
+			size_t dummyIndex = 0;
+
+			while ((idx = textBox.get_text().find("<dummy", idx)) != std::string::npos) {
+				auto endIdx = textBox.get_text().find('>', idx);
+
+				// Malformed tag
+				if (endIdx == std::string::npos) {
+					break;
+				}
+
+				float pX{}, pY{};
+				textBox.get_character_position(static_cast<int32_t>(idx - contentTextShift), pX, pY);
+
+				pX += textBox.get_absolute_position()[0];
+				pY += textBox.get_absolute_position()[1];
+
+				if (dummyIndex == 0) {
+					container.emit_rect(pX, pY, 80, 80, Text::Color{0, 0.5, 0, 1}, PipelineIndex::OUTLINE);
+				}
+				else if (dummyIndex == 1) {
+					container.emit_rect(pX, pY, 60, 60, Text::Color{0, 0.5, 0, 1}, PipelineIndex::OUTLINE);
+				}
+
+				contentTextShift += endIdx - idx;
+				idx = endIdx;
+				++dummyIndex;
+			}
+		}
+	}
 }
 
 static void set_up_toolbar(UIContainer& container) {

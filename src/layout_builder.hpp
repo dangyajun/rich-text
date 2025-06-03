@@ -61,6 +61,7 @@ struct LayoutBuildParams {
 	const ValueRuns<bool>* pSmallcapsRuns;
 	const ValueRuns<bool>* pSubscriptRuns;
 	const ValueRuns<bool>* pSuperscriptRuns;
+	const float* pDummyWidths;
 };
 
 class LayoutBuilder {
@@ -119,6 +120,7 @@ class LayoutBuilder {
 		void shape_logical_run(const SingleScriptFont& font, const char* paragraphText, int32_t offset,
 				int32_t count, int32_t paragraphStart, int32_t paragraphLength, int script,
 				const icu::Locale& locale, bool reversed, bool vertical);
+		void shape_dummy_logical_run(float width, int32_t firstCharIndex);
 		bool compute_line_visual_runs(LayoutInfo& result, _SBParagraph* sbParagraph, const char* chars,
 				int32_t count, int32_t lineStart, int32_t lineEnd, size_t& highestRun,
 				int32_t& highestRunCharEnd, float textAreaHeight, bool truncate, bool vertical);

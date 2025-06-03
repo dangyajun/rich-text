@@ -104,6 +104,8 @@ struct LayoutBuilder::ParagraphBuildParams {
 	MaybeDefaultRunsIterator<bool> itSuperscript;
 	const ValueRuns<Font>& fontRuns;
 	const icu::Locale& defaultLocale;
+	const float* pDummyWidths;
+	uint32_t dummyIndex;
 	int32_t textAreaWidthFixed;
 	int32_t tabWidthFixed;
 	float textAreaHeight;
@@ -203,6 +205,8 @@ void LayoutBuilder::build_layout_info_internal(LayoutInfo& result, const char* c
 		.itSuperscript = MaybeDefaultRunsIterator(params.pSuperscriptRuns, false, count),
 		.fontRuns = fontRuns,
 		.defaultLocale = icu::Locale::getDefault(),
+		.pDummyWidths = params.pDummyWidths,
+		.dummyIndex = 0,
 		// 26.6 fixed-point metrics
 		.textAreaWidthFixed = static_cast<int32_t>(params.textAreaWidth * 64.f),
 		.tabWidthFixed = static_cast<int32_t>(params.tabWidth * 64.f),
@@ -299,11 +303,23 @@ LayoutBuilder::ParagraphBuildResult LayoutBuilder::build_paragraph(LayoutInfo& r
 			auto level, bool smallcaps, bool subscript, bool superscript) {
 		while (subFontOffset < limit) {
 			auto runStart = subFontOffset;
-			auto subFont = FontRegistry::get_sub_font(baseFont, fullText, subFontOffset, limit,
-					script, smallcaps, subscript, superscript);
+			SingleScriptFont subFont;
 
-			shape_logical_run(subFont, paragraphText, runStart - paragraphStart, subFontOffset - runStart,
-					paragraphStart, paragraphLength, script, params.defaultLocale, level & 1, params.vertical);
+			if (baseFont.get_family().handle == FontFamily::DUMMY_FAMILY) {
+				subFont = SingleScriptFont{FaceDataHandle{FaceDataHandle::DUMMY_FACE}, baseFont.get_size(),
+						baseFont.get_weight(), baseFont.get_style()};
+				subFontOffset = limit;
+
+				shape_dummy_logical_run(params.pDummyWidths[params.dummyIndex++], runStart);
+			}
+			else {
+				subFont = FontRegistry::get_sub_font(baseFont, fullText, subFontOffset, limit,
+						script, smallcaps, subscript, superscript);
+
+				shape_logical_run(subFont, paragraphText, runStart - paragraphStart, subFontOffset - runStart,
+						paragraphStart, paragraphLength, script, params.defaultLocale, level & 1,
+						params.vertical);
+			}
 
 			if (!m_logicalRuns.empty() && m_logicalRuns.back().font == subFont) {
 				m_logicalRuns.back().charEndIndex = subFontOffset;
@@ -552,6 +568,13 @@ void LayoutBuilder::shape_logical_run(const SingleScriptFont& font, const char* 
 	}
 }
 
+void LayoutBuilder::shape_dummy_logical_run(float width, int32_t firstCharIndex) {
+	m_glyphs.emplace_back(0u);
+	m_charIndices.emplace_back(static_cast<uint32_t>(firstCharIndex));
+	m_glyphPositions[0].emplace_back(static_cast<int32_t>(width * 64.f));
+	m_glyphPositions[1].emplace_back(0);
+}
+
 bool LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef sbParagraph, const char* chars,
 		int32_t count, int32_t lineStart, int32_t lineEnd, size_t& highestRun, int32_t& highestRunCharEnd,
 		float textAreaHeight, bool truncate, bool vertical) {
@@ -580,14 +603,20 @@ bool LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef 
 
 			for (;;) {
 				auto logicalRunEnd = m_logicalRuns[run].charEndIndex;
-				auto fontData = FontRegistry::get_font_data(m_logicalRuns[run].font);
 
-				if (auto ascent = fontData.get_ascent(); ascent > maxAscent) {
-					maxAscent = ascent;
+				if (!m_logicalRuns[run].font.is_dummy()) {
+					auto fontData = FontRegistry::get_font_data(m_logicalRuns[run].font);
+
+					if (auto ascent = fontData.get_ascent(); ascent > maxAscent) {
+						maxAscent = ascent;
+					}
+
+					if (auto descent = fontData.get_descent(); descent < maxDescent) {
+						maxDescent = descent;
+					}
 				}
-
-				if (auto descent = fontData.get_descent(); descent < maxDescent) {
-					maxDescent = descent;
+				else if (static_cast<float>(m_logicalRuns[run].font.size) > maxAscent) {
+					maxAscent = static_cast<float>(m_logicalRuns[run].font.size);
 				}
 
 				if (runEnd < logicalRunEnd) {
@@ -611,14 +640,20 @@ bool LayoutBuilder::compute_line_visual_runs(LayoutInfo& result, SBParagraphRef 
 
 			for (;;) {
 				auto logicalRunStart = run == 0 ? 0 : m_logicalRuns[run - 1].charEndIndex;
-				auto fontData = FontRegistry::get_font_data(m_logicalRuns[run].font);
 
-				if (auto ascent = fontData.get_ascent(); ascent > maxAscent) {
-					maxAscent = ascent;
+				if (!m_logicalRuns[run].font.is_dummy()) {
+					auto fontData = FontRegistry::get_font_data(m_logicalRuns[run].font);
+
+					if (auto ascent = fontData.get_ascent(); ascent > maxAscent) {
+						maxAscent = ascent;
+					}
+
+					if (auto descent = fontData.get_descent(); descent < maxDescent) {
+						maxDescent = descent;
+					}
 				}
-
-				if (auto descent = fontData.get_descent(); descent < maxDescent) {
-					maxDescent = descent;
+				else if (static_cast<float>(m_logicalRuns[run].font.size) > maxAscent) {
+					maxAscent = static_cast<float>(m_logicalRuns[run].font.size);
 				}
 
 				if (runStart >= logicalRunStart) {

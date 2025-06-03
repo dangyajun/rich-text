@@ -17,6 +17,14 @@ void draw_text(const LayoutInfo& layout, float textAreaWidth, XAlignment textXAl
 	layout.for_each_run(textAreaWidth, textXAlignment, [&](auto lineIndex, auto runIndex, auto lineX,
 			auto lineY) {
 		auto font = layout.get_run_font(runIndex);
+
+		if (font.is_dummy()) {
+			auto glyphEndIndex = layout.get_run_glyph_end_index(runIndex);
+			glyphPosIndex += 2 + 2 * (glyphEndIndex - glyphIndex);
+			glyphIndex = glyphEndIndex;
+			return;
+		}
+
 		auto fontData = Text::FontRegistry::get_font_data(font);
 
 		for (auto glyphEndIndex = layout.get_run_glyph_end_index(runIndex); glyphIndex < glyphEndIndex; 
@@ -45,9 +53,17 @@ void draw_text(const LayoutInfo& layout, const FormattingRuns& formatting, float
 	layout.for_each_run(textAreaWidth, textXAlignment, [&](auto lineIndex, auto runIndex, auto lineX,
 			auto lineY) {
 		auto font = layout.get_run_font(runIndex);
-		auto fontData = Text::FontRegistry::get_font_data(font);
 
 		visitor(lineIndex, runIndex);
+
+		if (font.is_dummy()) {
+			auto glyphEndIndex = layout.get_run_glyph_end_index(runIndex);
+			glyphPosIndex += 2 + 2 * (glyphEndIndex - glyphIndex);
+			glyphIndex = glyphEndIndex;
+			return;
+		}
+
+		auto fontData = Text::FontRegistry::get_font_data(font);
 
 		Text::FormattingIterator iter(formatting, layout.is_run_rtl(runIndex)
 				? layout.get_run_char_end_index(runIndex) : layout.get_run_char_start_index(runIndex));

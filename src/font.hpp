@@ -45,7 +45,6 @@ class FontFace {
 };
 
 class Font final : public FontFace {
-	private:
 	public:
 		constexpr Font() = default;
 		constexpr explicit Font(FontFamily family, FontWeight weight, FontStyle style, uint32_t size)
@@ -91,6 +90,10 @@ struct SingleScriptFont {
 	constexpr float get_baseline_offset() const {
 		return calc_baseline_offset(static_cast<float>(size), syntheticSmallCaps, syntheticSubscript,
 				syntheticSuperscript);
+	}
+
+	constexpr bool is_dummy() const {
+		return face.handle == FaceDataHandle::DUMMY_FACE;
 	}
 
 	constexpr bool operator==(const SingleScriptFont& other) const {

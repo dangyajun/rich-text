@@ -28,6 +28,7 @@ using FaceIndex_T = uint16_t;
 
 struct FontFamily {
 	static constexpr const FamilyIndex_T INVALID_FAMILY = static_cast<FamilyIndex_T>(~0u);
+	static constexpr const FamilyIndex_T DUMMY_FAMILY = INVALID_FAMILY - 1;
 
 	FamilyIndex_T handle{INVALID_FAMILY};
 
@@ -50,6 +51,7 @@ struct FontFamily {
 
 struct FaceDataHandle {
 	static constexpr const FaceIndex_T INVALID_FACE = static_cast<FaceIndex_T>(~0u);
+	static constexpr const FaceIndex_T DUMMY_FACE = INVALID_FACE - 1;
 
 	FaceIndex_T handle{INVALID_FACE};
 	// The source weight and style as this face expects its underlying font data to be, for use in calculating

@@ -450,6 +450,7 @@ void TextBox::recalc_text() {
 		.pSmallcapsRuns = &m_formatting.smallcapsRuns,
 		.pSubscriptRuns = &m_formatting.subscriptRuns,
 		.pSuperscriptRuns = &m_formatting.superscriptRuns,
+		.pDummyWidths = m_formatting.dummyWidths.data(),
 	};
 	builder.build_layout_info(m_layout, text.data(), text.size(), m_formatting.fontRuns, params);
 
@@ -505,3 +506,17 @@ void TextBox::set_size(float width, float height) {
 	recalc_text();
 }
 
+const std::string& TextBox::get_text() const {
+	return m_text;
+}
+
+const std::string& TextBox::get_content_text() const {
+	return m_contentText;
+}
+
+void TextBox::get_character_position(int32_t charIndex, float& outX, float& outY) const {
+	auto [x, y, height, lineNumber] = m_layout.calc_cursor_pixel_pos(get_size()[0], m_textXAlignment,
+			Text::CursorPosition{static_cast<uint32_t>(charIndex)});
+	outX = x;
+	outY = y;
+}

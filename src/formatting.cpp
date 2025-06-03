@@ -55,6 +55,7 @@ class FormattingParser {
 		ValueRunBuilder<bool> m_smallcapsRuns;
 		ValueRunBuilder<bool> m_subscriptRuns;
 		ValueRunBuilder<bool> m_superscriptRuns;
+		std::vector<float> m_dummyWidths;
 
 		void parse_content(std::string_view expectedClose);
 		bool parse_open_bracket(std::string_view expectedClose);
@@ -80,6 +81,8 @@ class FormattingParser {
 		void parse_stroke();
 		[[nodiscard]] StrokeState parse_stroke_attributes();
 		void parse_stroke_joins(StrokeState&);
+
+		void parse_dummy();
 
 		std::string_view parse_attribute(std::string_view name);
 		template <typename T> requires std::is_arithmetic_v<T>
@@ -163,6 +166,7 @@ FormattingRuns FormattingParser::get_result(std::string& contentText) {
 			.smallcapsRuns = m_smallcapsRuns.get(),
 			.subscriptRuns = m_subscriptRuns.get(),
 			.superscriptRuns = m_superscriptRuns.get(),
+			.dummyWidths = std::move(m_dummyWidths),
 		};
 
 		return result;
@@ -219,6 +223,9 @@ bool FormattingParser::parse_open_bracket(std::string_view expectedClose) {
 				consume_word(std::move(expectedClose));
 			}
 			return true;
+		case 'd':
+			parse_dummy();
+			break;
 		case 'f':
 			parse_font();
 			break;
@@ -551,6 +558,38 @@ void FormattingParser::parse_stroke_joins(StrokeState& attribs) {
 		else if (c == SENTINEL) {
 			raise_error();
 			return;
+		}
+	}
+}
+
+void FormattingParser::parse_dummy() {
+	if (!consume_word("ummy")) {
+		return;
+	}
+
+	uint32_t width = 0u;
+	auto height = m_fontRuns.get_current_value().get_size();
+
+	for (;;) {
+		switch (next_char()) {
+			case 'w':
+				parse_attribute("idth=\"", width);
+				break;
+			case 'h':
+				parse_attribute("eight=\"", height);
+				break;
+			case ' ':
+				break;
+			case '>':
+				m_dummyWidths.emplace_back(width);
+				m_fontRuns.push(m_output.view().size(), Font(FontFamily{FontFamily::DUMMY_FAMILY},
+						FontWeight::REGULAR, FontStyle::NORMAL, height));
+				m_output.put(' ');
+				m_fontRuns.pop(m_output.view().size());
+				return;
+			default:
+				raise_error();
+				return;
 		}
 	}
 }

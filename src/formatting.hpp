@@ -24,6 +24,7 @@ struct FormattingRuns {
 	ValueRuns<bool> smallcapsRuns;
 	ValueRuns<bool> subscriptRuns;
 	ValueRuns<bool> superscriptRuns;
+	std::vector<float> dummyWidths;
 };
 
 FormattingRuns make_default_formatting_runs(const std::string& text, std::string& contentText,

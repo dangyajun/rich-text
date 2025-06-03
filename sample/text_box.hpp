@@ -32,6 +32,11 @@ class TextBox final : public UIObject {
 		void set_rich_text(bool);
 		void set_editable(bool);
 		void set_selectable(bool);
+
+		const std::string& get_text() const;
+		const std::string& get_content_text() const;
+
+		void get_character_position(int32_t charIndex, float& outX, float& outY) const;
 	private:
 		Text::Font m_font{};
 		std::string m_text{};
