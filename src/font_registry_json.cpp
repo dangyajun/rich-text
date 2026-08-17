@@ -62,7 +62,7 @@ FontRegistryError FontRegistry::register_family_from_json_data(std::string_view 
 					return FontRegistryError::INVALID_JSON;
 				}
 
-				availableScripts.set(scriptValue);
+				availableScripts.set(scriptCode);
 			}
 			else if (scriptValue.get(scriptName) == 0) {
 				UErrorCode err{};
